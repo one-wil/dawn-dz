@@ -467,7 +467,7 @@ const STORE_CONFIG = {
     "promoDiscountProducts": []
   },
   "STORE_INFO": {
-    "name": "Lip-waw",
+    "name": "Dfm",
     "storeIcon": "-",
     "storeTitle": "-",
     "tagline": "",
