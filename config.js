@@ -4,7 +4,68 @@
 // =============================================================================
 
 const STORE_CONFIG = {
-  "PRODUCTS": {},
+  "PRODUCTS": {
+    "1789476986031": {
+      "name": "لباس أطفال تركي",
+      "price": 300,
+      "description": "",
+      "category": "",
+      "stock": 0,
+      "featured": false,
+      "availableColors": [
+        "أحمر",
+        "أزرق"
+      ],
+      "availableSizes": [
+        "S",
+        "M"
+      ],
+      "ageRanges": [],
+      "colorImages": {
+        "أحمر": {
+          "images": [
+            "https://raw.githubusercontent.com/one-wil/dawn-dz/main/images/product-1789476986031-أحمر-1789477096937-modal3.jpg"
+          ],
+          "ageRanges": [
+            {
+              "ageFrom": " ",
+              "ageTo": " ",
+              "size": "S"
+            },
+            {
+              "ageFrom": " ",
+              "ageTo": " ",
+              "size": "M"
+            }
+          ]
+        },
+        "أزرق": {
+          "images": [
+            "https://raw.githubusercontent.com/one-wil/dawn-dz/main/images/product-1789476986031-أزرق-1789477125433-modal4.jpg"
+          ],
+          "ageRanges": [
+            {
+              "ageFrom": " ",
+              "ageTo": " ",
+              "size": "S"
+            },
+            {
+              "ageFrom": " ",
+              "ageTo": " ",
+              "size": "M"
+            }
+          ]
+        }
+      },
+      "sizeGuide": {
+        "enabled": false,
+        "guide": {}
+      },
+      "createdAt": "2026-09-15T12:56:26.031Z",
+      "image": "https://raw.githubusercontent.com/one-wil/dawn-dz/main/images/product-1789476986031-1789477052559-modal3.jpg",
+      "updatedAt": "2026-09-15T12:58:09.766Z"
+    }
+  },
   "PRODUCT_ORDER": {},
   "DELIVERY_PRICES": {
     "01 - أدرار": {
