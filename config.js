@@ -66,7 +66,9 @@ const STORE_CONFIG = {
       "updatedAt": "2026-09-15T12:58:09.766Z"
     }
   },
-  "PRODUCT_ORDER": {},
+  "PRODUCT_ORDER": {
+    "1789476986031": 1
+  },
   "DELIVERY_PRICES": {
     "01 - أدرار": {
       "home": 1100,
@@ -336,7 +338,7 @@ const STORE_CONFIG = {
     "name": "Dfm",
     "storeIcon": "-",
     "storeTitle": "-",
-    "tagline": "",
+    "tagline": "متجر تركية فاخرة",
     "phoneNumbers": [
       "0671466489",
       "0551102155"
