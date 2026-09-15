@@ -338,7 +338,7 @@ const STORE_CONFIG = {
     "name": "Dfm",
     "storeIcon": "-",
     "storeTitle": "-",
-    "tagline": "متجر تركية فاخرة",
+    "tagline": "متجر عمي داون",
     "phoneNumbers": [
       "0671466489",
       "0551102155"
