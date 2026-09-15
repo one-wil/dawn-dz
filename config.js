@@ -311,7 +311,7 @@ const STORE_CONFIG = {
       "minQuantity": 1
     },
     "home": {
-      "enabled": true,
+      "enabled": false,
       "minAmount": 0,
       "wilayas": [],
       "minQuantity": 3
