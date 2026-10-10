@@ -1,5 +1,4 @@
 
-
 <!DOCTYPE html>
 <html lang="ar">
 <head>
@@ -10095,6 +10094,14 @@ async function loadSubscriptionPanel(forceRefresh=false){
   const content=document.getElementById('subscriptionContent');
   const alertBox=document.getElementById('subscriptionAlert');
   const hostNow=String(location.hostname||'').trim().toLowerCase();
+  // Watchdog: even if the network/WebView ignores AbortController, never leave the spinner forever.
+  const __smLoadingWatchdog=setTimeout(()=>{
+    if(loading && loading.style.display!=='none' && /fa-spinner|جارٍ تحميل معلومات الاشتراك|تعذّر الحصول على رد/.test(loading.innerHTML||'')){
+      loading.style.display='block';
+      loading.innerHTML='تعذّر الحصول على رد من خادم التراخيص خلال 18 ثانية. تحقق من نشر Worker وعنوان LICENSE_SERVER ثم أعد المحاولة. <button type="button" class="btn btn-primary" style="margin-right:10px" onclick="loadSubscriptionPanel(true)">إعادة المحاولة</button>';
+      if(content && !__smSubscriptionCache) content.style.display='none';
+    }
+  },18000);
   const renderCached=()=>{
     if(!__smSubscriptionCache)return false;
     // Re-render from the cached response without another HTTP request.
@@ -10141,11 +10148,45 @@ async function loadSubscriptionPanel(forceRefresh=false){
     const url=base+'/api/store/license-status?site='+encodeURIComponent(host);
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),12000);
-    let response;
-    try{response=await fetch(url,{method:'GET',headers:{'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store',signal:controller.signal});}
-    finally{clearTimeout(timeout);}
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok||data.success!==true)throw new Error(data.error||('تعذر تحميل بيانات الاشتراك (HTTP '+response.status+').'));
+    let response, data;
+    // Keep the timeout active until BOTH the HTTP response and its JSON body are read.
+    // Previously the timer was cleared immediately after fetch(), so a stalled response
+    // body could leave the subscription tab on its spinner forever.
+    try {
+      // Race the full request AND body read against a hard timeout. Some mobile
+      // WebViews can leave fetch()/response.text() pending even after abort().
+      const requestTask = (async () => {
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        const raw = await res.text();
+        let parsed;
+        try { parsed = raw ? JSON.parse(raw) : {}; }
+        catch (_) { throw new Error('استجاب خادم التراخيص ببيانات غير صالحة. تحقق من نشر نسخة Worker الصحيحة.'); }
+        return { res, parsed };
+      })();
+      let hardTimeoutId;
+      const hardTimeout = new Promise((_, reject) => {
+        hardTimeoutId = setTimeout(() => {
+          try { controller.abort(); } catch (_) {}
+          reject(new Error('انتهت مهلة الاتصال بخادم التراخيص بعد 12 ثانية. تحقق من Worker وعنوان LICENSE_SERVER.'));
+        }, 12000);
+      });
+      let result;
+      try {
+        result = await Promise.race([requestTask, hardTimeout]);
+      } finally {
+        clearTimeout(hardTimeoutId);
+      }
+      response = result.res;
+      data = result.parsed;
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok || data.success !== true) throw new Error(data.error || ('تعذر تحميل بيانات الاشتراك (HTTP ' + response.status + ').'));
     data.__host=host; __smSubscriptionCache=data; __smSubscriptionFetchedAt=Date.now();
     const planMap={'trial':'شهر تجريبي مجاني','3m':'3 أشهر','6m':'6 أشهر','12m':'12 شهرًا'};
     const priceMap={'trial':0,'3m':3000,'6m':5000,'12m':9000};
@@ -10187,7 +10228,7 @@ async function loadSubscriptionPanel(forceRefresh=false){
     }
     return null;
   }})();
-  try{return await __smSubscriptionPromise;}finally{__smSubscriptionPromise=null;}
+  try{return await __smSubscriptionPromise;}finally{clearTimeout(__smLoadingWatchdog);__smSubscriptionPromise=null;}
 }
 
 function tabName(id){return ({'dashboard-home':'الرئيسية',dashboard:'الرئيسية',products:'المنتجات',delivery:'التوصيل',settings:'إعدادات المتجر',tools:'أدوات النظام',orders:'الطلبات',archive:'أرشيف الطلبات','checkout-analytics':'تحليل Checkout',about:'من نحن',subscription:'اشتراكي وصلاحية متجري'})[id]||id} 
