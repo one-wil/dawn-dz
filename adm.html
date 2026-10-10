@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="ar">
 <head>
@@ -10084,41 +10085,92 @@ function activeTab(){
  if(visible)return visible;
  return state.lastTab||'dashboard-home';
 }
-async function loadSubscriptionPanel(){
+// Cache subscription data in memory for this dashboard session. The first fetch starts
+// when the dashboard initializes; opening the subscription tab then renders instantly.
+let __smSubscriptionCache = null;
+let __smSubscriptionPromise = null;
+let __smSubscriptionFetchedAt = 0;
+async function loadSubscriptionPanel(forceRefresh=false){
   const loading=document.getElementById('subscriptionLoading');
   const content=document.getElementById('subscriptionContent');
   const alertBox=document.getElementById('subscriptionAlert');
-  if(loading)loading.style.display='block';if(content)content.style.display='none';
-  try{
+  const hostNow=String(location.hostname||'').trim().toLowerCase();
+  const renderCached=()=>{
+    if(!__smSubscriptionCache)return false;
+    // Re-render from the cached response without another HTTP request.
+    const d=__smSubscriptionCache;
+    const planMap={'trial':'شهر تجريبي مجاني','3m':'3 أشهر','6m':'6 أشهر','12m':'12 شهرًا'};
+    const priceMap={'trial':0,'3m':3000,'6m':5000,'12m':9000};
+    const plan=d.subscriptionName||planMap[d.subscriptionPlan]||'غير مسجل';
+    const price=d.subscriptionPrice!==null&&d.subscriptionPrice!==undefined&&d.subscriptionPrice!==''&&Number.isFinite(Number(d.subscriptionPrice))?Number(d.subscriptionPrice):(Object.prototype.hasOwnProperty.call(priceMap,d.subscriptionPlan)?priceMap[d.subscriptionPlan]:null);
+    const dateText=v=>v?String(v).slice(0,10):'غير مسجل';
+    const isTrial=d.subscriptionType==='trial'||d.subscriptionPlan==='trial';
+    const status=d.status==='not_found'?'غير مسجل':d.expired?(isTrial?'انتهت التجربة المجانية':'منتهي الصلاحية'):d.licensed?(isTrial?'تجربة مجانية نشطة':'نشط'):d.status==='active'?'غير نشط':'قيد التحقق';
+    const subscriptionOnly=!!d.expired||!d.licensed;
+    document.querySelectorAll('.sidebar-menu .menu-item').forEach(item=>{if(!item.classList.contains('subscription-menu-item')&&!item.classList.contains('logout-menu-item'))item.style.display=subscriptionOnly?'none':'';});
+    const put=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value;};
+    const statusEl=document.getElementById('subscriptionStatus');
+    if(statusEl){statusEl.textContent=status;statusEl.className='subscription-status-pill'+(d.expired?' expired':(!d.licensed?'warning':''));}
+    put('subscriptionStoreName',d.storeName||(typeof CONFIG!=='undefined'&&CONFIG?.STORE_INFO?.name)||'متجري الإلكتروني');
+    put('subscriptionPlanLine',(isTrial?'الفترة التجريبية: ':'العرض المختار: ')+plan);
+    put('subscriptionPlan',plan); put('subscriptionPrice',price===null?'غير مسجل':price.toLocaleString('fr-DZ')+' دج');
+    put('subscriptionActivation',dateText(d.activationDate)); put('subscriptionExpiration',dateText(d.expirationDate));
+    let remaining='غير محددة';
+    if(d.daysRemaining!==null&&d.daysRemaining!==undefined&&d.daysRemaining!==''&&Number.isFinite(Number(d.daysRemaining))){const n=Number(d.daysRemaining);remaining=n<0?'انتهت منذ '+Math.abs(n)+' يوم':n===0?'تنتهي اليوم':n===1?'يوم واحد':n+' يومًا';}
+    put('subscriptionRemaining',remaining);
+    document.querySelectorAll('.subscription-price-card').forEach(card=>card.classList.toggle('selected',card.dataset.plan===d.subscriptionPlan));
+    const alertBox=document.getElementById('subscriptionAlert');
+    if(alertBox){alertBox.style.display='block';alertBox.className='subscription-alert';
+      if(d.status==='not_found'){alertBox.classList.add('danger');alertBox.textContent='لم يعثر الخادم على ترخيص مرتبط بهذا النطاق ('+hostNow+'). تحقق من أن نطاق المتجر محفوظ في ترخيص STOREMASTER.';}
+      else if(d.expired){alertBox.classList.add('danger');alertBox.textContent=isTrial?'انتهت الفترة التجريبية المجانية. اختر باقة مدفوعة وتواصل مع إدارة STOREMASTER لتفعيلها.':'انتهت صلاحية متجرك. يمكنك الاطلاع على بيانات الاشتراك هنا، أما إعادة التفعيل فتتم من خلال إدارة STOREMASTER فقط.';}
+      else if(d.daysRemaining!==null&&d.daysRemaining<=7){alertBox.textContent=(d.daysRemaining<=0?(isTrial?'تنتهي تجربتك المجانية اليوم.':'تنتهي صلاحية متجرك اليوم.'):(isTrial?'اقترب انتهاء التجربة المجانية. بقي '+d.daysRemaining+' يومًا.':'اقترب موعد انتهاء صلاحية متجرك. بقي '+d.daysRemaining+' يومًا.'))+' يرجى التواصل مع STOREMASTER.';}
+      else{alertBox.classList.add('success');alertBox.textContent='اشتراك متجرك مسجل لدى STOREMASTER. تُدار عمليات التفعيل والتجديد من لوحة الإدارة المركزية.';}
+    }
+    if(loading)loading.style.display='none'; if(content)content.style.display='block';
+    return true;
+  };
+  if(!forceRefresh && __smSubscriptionCache && __smSubscriptionCache.__host===hostNow){renderCached();return __smSubscriptionCache;}
+  if(!forceRefresh && __smSubscriptionPromise){return __smSubscriptionPromise;}
+  if(loading){loading.style.display='block';loading.innerHTML='<i class="fas fa-spinner fa-spin"></i> جارٍ تحميل معلومات الاشتراك من الخادم...';}
+  if(content && !__smSubscriptionCache)content.style.display='none';
+  __smSubscriptionPromise=(async()=>{try{
     const host=String(location.hostname||'').trim().toLowerCase();
     if(!host)throw new Error('تعذر تحديد نطاق المتجر.');
-    const url=smWorkerBase()+'/api/store/license-status?site='+encodeURIComponent(host);
-    const response=await fetch(url,{method:'GET',headers:{'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
+    const base=String(smWorkerBase()||'').replace(/\/$/,'');
+    if(!base)throw new Error('عنوان خادم التراخيص غير مضبوط في قالب المتجر.');
+    const url=base+'/api/store/license-status?site='+encodeURIComponent(host);
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),12000);
+    let response;
+    try{response=await fetch(url,{method:'GET',headers:{'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store',signal:controller.signal});}
+    finally{clearTimeout(timeout);}
     const data=await response.json().catch(()=>({}));
-    if(!response.ok||data.success!==true)throw new Error(data.error||'تعذر قراءة بيانات الاشتراك من الخادم.');
+    if(!response.ok||data.success!==true)throw new Error(data.error||('تعذر تحميل بيانات الاشتراك (HTTP '+response.status+').'));
+    data.__host=host; __smSubscriptionCache=data; __smSubscriptionFetchedAt=Date.now();
     const planMap={'trial':'شهر تجريبي مجاني','3m':'3 أشهر','6m':'6 أشهر','12m':'12 شهرًا'};
     const priceMap={'trial':0,'3m':3000,'6m':5000,'12m':9000};
     const plan=data.subscriptionName||planMap[data.subscriptionPlan]||'غير مسجل';
-    const price=data.subscriptionPrice!==null&&data.subscriptionPrice!==undefined&&data.subscriptionPrice!==''&&Number.isFinite(Number(data.subscriptionPrice))?Number(data.subscriptionPrice):(priceMap[data.subscriptionPlan]||null);
+    const price=data.subscriptionPrice!==null&&data.subscriptionPrice!==undefined&&data.subscriptionPrice!==''&&Number.isFinite(Number(data.subscriptionPrice))?Number(data.subscriptionPrice):(Object.prototype.hasOwnProperty.call(priceMap,data.subscriptionPlan)?priceMap[data.subscriptionPlan]:null);
     const dateText=v=>v?String(v).slice(0,10):'غير مسجل';
     const isTrial=data.subscriptionType==='trial'||data.subscriptionPlan==='trial';
     const status=data.status==='not_found'?'غير مسجل':data.expired?(isTrial?'انتهت التجربة المجانية':'منتهي الصلاحية'):data.licensed?(isTrial?'تجربة مجانية نشطة':'نشط'):data.status==='active'?'غير نشط':'قيد التحقق';
     const subscriptionOnly=!!data.expired||!data.licensed;
     document.querySelectorAll('.sidebar-menu .menu-item').forEach(item=>{if(!item.classList.contains('subscription-menu-item')&&!item.classList.contains('logout-menu-item'))item.style.display=subscriptionOnly?'none':'';});
+    const put=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value;};
     const statusEl=document.getElementById('subscriptionStatus');
-    statusEl.textContent=status;statusEl.className='subscription-status-pill'+(data.expired?' expired':(!data.licensed?'warning':''));
-    document.getElementById('subscriptionStoreName').textContent=data.storeName||CONFIG?.STORE_INFO?.name||'متجري الإلكتروني';
-    document.getElementById('subscriptionPlanLine').textContent=(isTrial?'الفترة التجريبية: ':'العرض المختار: ')+plan;
-    document.getElementById('subscriptionPlan').textContent=plan;
-    document.getElementById('subscriptionPrice').textContent=price===null?'غير مسجل':price.toLocaleString('fr-DZ')+' دج';
-    document.getElementById('subscriptionActivation').textContent=dateText(data.activationDate);
-    document.getElementById('subscriptionExpiration').textContent=dateText(data.expirationDate);
+    if(statusEl){statusEl.textContent=status;statusEl.className='subscription-status-pill'+(data.expired?' expired':(!data.licensed?'warning':''));}
+    put('subscriptionStoreName',data.storeName||(typeof CONFIG!=='undefined'&&CONFIG?.STORE_INFO?.name)||'متجري الإلكتروني');
+    put('subscriptionPlanLine',(isTrial?'الفترة التجريبية: ':'العرض المختار: ')+plan);
+    put('subscriptionPlan',plan);
+    put('subscriptionPrice',price===null?'غير مسجل':price.toLocaleString('fr-DZ')+' دج');
+    put('subscriptionActivation',dateText(data.activationDate));
+    put('subscriptionExpiration',dateText(data.expirationDate));
     let remaining='غير محددة';
     if(data.daysRemaining!==null&&data.daysRemaining!==undefined&&data.daysRemaining!==''&&Number.isFinite(Number(data.daysRemaining))){const n=Number(data.daysRemaining);remaining=n<0?'انتهت منذ '+Math.abs(n)+' يوم':n===0?'تنتهي اليوم':n===1?'يوم واحد':n+' يومًا';}
-    document.getElementById('subscriptionRemaining').textContent=remaining;
+    put('subscriptionRemaining',remaining);
     document.querySelectorAll('.subscription-price-card').forEach(card=>card.classList.toggle('selected',card.dataset.plan===data.subscriptionPlan));
     if(alertBox){alertBox.style.display='none';alertBox.className='subscription-alert';alertBox.textContent='';
-      if(data.status==='not_found'){alertBox.style.display='block';alertBox.classList.add('danger');alertBox.textContent='لم يعثر الخادم على ترخيص مرتبط بهذا النطاق. يرجى التواصل مع إدارة STOREMASTER.';}
+      if(data.status==='not_found'){alertBox.style.display='block';alertBox.classList.add('danger');alertBox.textContent='لم يعثر الخادم على ترخيص مرتبط بهذا النطاق ('+host+'). تحقق من أن نطاق المتجر محفوظ في ترخيص STOREMASTER.';}
       else if(data.expired){alertBox.style.display='block';alertBox.classList.add('danger');alertBox.textContent=isTrial?'انتهت الفترة التجريبية المجانية. اختر باقة مدفوعة وتواصل مع إدارة STOREMASTER لتفعيلها.':'انتهت صلاحية متجرك. يمكنك الاطلاع على بيانات الاشتراك هنا، أما إعادة التفعيل فتتم من خلال إدارة STOREMASTER فقط.';}
       else if(data.daysRemaining!==null&&data.daysRemaining<=7){alertBox.style.display='block';alertBox.textContent=data.daysRemaining<=0?(isTrial?'تنتهي تجربتك المجانية اليوم. تواصل مع STOREMASTER لاختيار باقة مدفوعة.':'تنتهي صلاحية متجرك اليوم. يرجى التواصل مع إدارة STOREMASTER للتجديد.'):(isTrial?'اقترب انتهاء التجربة المجانية. بقي '+data.daysRemaining+' يومًا.':'اقترب موعد انتهاء صلاحية متجرك. بقي '+data.daysRemaining+' يومًا.')+' يرجى التواصل مع إدارة STOREMASTER.';}
       else {alertBox.style.display='block';alertBox.classList.add('success');alertBox.textContent='اشتراك متجرك مسجل لدى STOREMASTER. تُدار عمليات التفعيل والتجديد من لوحة الإدارة المركزية.';}
@@ -10126,10 +10178,16 @@ async function loadSubscriptionPanel(){
     if(loading)loading.style.display='none';if(content)content.style.display='block';
     return data;
   }catch(error){
-    if(loading)loading.innerHTML='<i class="fas fa-exclamation-triangle"></i> '+String(error.message||error);
+    const msg=error?.name==='AbortError'?'انتهت مهلة الاتصال بخادم التراخيص. تحقق من اتصال الإنترنت وعنوان Worker.':String(error?.message||error);
+    if(loading){loading.style.display='block';loading.innerHTML='<i class="fas fa-exclamation-triangle"></i> تعذر تحميل معلومات الاشتراك: '+(typeof escapeHtml==='function'?escapeHtml(msg):msg)+' <button type="button" class="btn btn-primary" style="margin-right:10px" onclick="loadSubscriptionPanel(true)">إعادة المحاولة</button>';}
     if(content)content.style.display='none';
+    if(__smSubscriptionCache && __smSubscriptionCache.__host===hostNow){
+      if(loading)loading.innerHTML='تعذر تحديث البيانات؛ نعرض آخر معلومات محمّلة. <button type="button" class="btn btn-primary" style="margin-right:10px" onclick="loadSubscriptionPanel(true)">إعادة المحاولة</button>';
+      renderCached(); return __smSubscriptionCache;
+    }
     return null;
-  }
+  }})();
+  try{return await __smSubscriptionPromise;}finally{__smSubscriptionPromise=null;}
 }
 
 function tabName(id){return ({'dashboard-home':'الرئيسية',dashboard:'الرئيسية',products:'المنتجات',delivery:'التوصيل',settings:'إعدادات المتجر',tools:'أدوات النظام',orders:'الطلبات',archive:'أرشيف الطلبات','checkout-analytics':'تحليل Checkout',about:'من نحن',subscription:'اشتراكي وصلاحية متجري'})[id]||id} 
