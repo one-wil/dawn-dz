@@ -8790,10 +8790,17 @@ updateDeliveryCost();
             if (!isBuyXGetYEligible(item.key)) return 0;
             const cfg = getBuyXGetYConfig();
             const totalForProduct = cartItems.reduce((sum, i) => String(i.key) === String(item.key) ? sum + (Number(i.quantity) || 0) : sum, 0);
+            // نوزّع عدد القطع المجانية المحسوب للمنتج مرة واحدة على أسطر السلة
+            // بالتتابع، مع احتساب ما خُصص للأسطر السابقة؛ لا نعيد استخدام العدد
+            // الإجمالي نفسه لكل بطاقة، حتى لو اختلف اللون أو المقاس.
             let remainingFree = Math.floor(totalForProduct / cfg.buy) * cfg.free;
             for (let i = 0; i < itemIndex; i++) {
                 const prev = cartItems[i];
-                if (String(prev.key) === String(item.key)) remainingFree -= Math.min(Number(prev.quantity) || 0, Math.max(0, Math.floor(totalForProduct / cfg.group) * cfg.free));
+                if (String(prev.key) !== String(item.key)) continue;
+                const previousQuantity = Math.max(0, Number(prev.quantity) || 0);
+                const allocatedToPrevious = Math.min(previousQuantity, remainingFree);
+                remainingFree -= allocatedToPrevious;
+                if (remainingFree <= 0) break;
             }
             return Math.max(0, Math.min(Number(item.quantity) || 0, remainingFree));
         }
