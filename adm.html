@@ -10463,9 +10463,7 @@ async function loadSubscriptionPanel(forceRefresh=false){
     const statusEl=document.getElementById('subscriptionStatus');
     if(statusEl){statusEl.textContent=status;statusEl.className='subscription-status-pill'+(d.expired?' expired':(!d.licensed?'warning':''));}
     put('subscriptionStoreName',d.storeName||(typeof CONFIG!=='undefined'&&CONFIG?.STORE_INFO?.name)||'متجري الإلكتروني');
-    put('subscriptionPlanLine',d.includedTrial&&d.currentPhase==='trial'
-      ? 'الشهر المجاني الأول ضمن باقة '+plan+' — تبدأ المدة المدفوعة في '+dateText(d.paidStartDate)
-      : (isTrial?'الفترة التجريبية: ':'العرض المختار: ')+plan);
+    put('subscriptionPlanLine',(isTrial?'الفترة التجريبية: ':'العرض المختار: ')+plan);
     put('subscriptionPlan',plan); put('subscriptionPrice',price===null?'غير مسجل':price.toLocaleString('fr-DZ')+' دج');
     put('subscriptionActivation',dateText(d.activationDate)); put('subscriptionExpiration',dateText(d.expirationDate));
     let remaining='غير محددة';
